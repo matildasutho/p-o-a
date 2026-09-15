@@ -1,5 +1,8 @@
-import styles from "./page.module.css";
+import ImageSequence from "@/components/home/ImageSequence";
+import { getSequenceAssets } from "@/lib/sequence";
 
 export default function Home() {
-  return <div className={styles.page}></div>;
+  const assets = getSequenceAssets();
+
+  return <ImageSequence assets={assets} />;
 }

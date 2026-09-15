@@ -26,8 +26,34 @@ body {
   line-height: 28px;
   padding: var(--base);
 }
+body::-webkit-scrollbar {
+  display: none;
+}
 header {
   padding-bottom: 1em;
+}
+
+.header--pinned {
+  position: fixed;
+  top: var(--base);
+  left: var(--base);
+  right: var(--base);
+  z-index: 10;
+  mix-blend-mode: difference;
+}
+
+.header--overlay {
+  color: #fff;
+}
+
+.sequence-counter {
+  position: fixed;
+  right: var(--base);
+  bottom: var(--base);
+  z-index: 10;
+  color: #fff;
+  mix-blend-mode: difference;
+  font-variant-numeric: tabular-nums;
 }
 
 a {
@@ -63,4 +89,64 @@ h1 {
 
 .hidden {
   display: none;
+}
+
+.sequence-stage {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  z-index: -1;
+  overflow: hidden;
+  background: #000;
+}
+
+/* Gives the page something to scroll — the stage above is fixed/pinned and
+   contributes no document height on its own. Scrolling back and forth here
+   keeps advancing the sequence (it loops), so the exact height isn't precise. */
+.sequence-scroll-spacer {
+  height: 1000vh;
+}
+
+.sequence-slot {
+  position: absolute;
+}
+
+.sequence-slot--background {
+  inset: 0;
+  z-index: 0;
+}
+
+.sequence-slot--right {
+  top: 50%;
+  right: 0em;
+  max-width: 30vw;
+  max-height: 100vh;
+
+  transform: translateY(-50%);
+  z-index: 2;
+}
+
+.sequence-slot--left {
+  top: 50%;
+  left: 0em;
+  max-width: 50vw;
+  max-height: 100vh;
+  transform: translateY(-50%);
+  z-index: 1;
+}
+
+.sequence-media {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+@media (max-width: 768px) {
+  .sequence-slot--right,
+  .sequence-slot--left {
+    width: 42vw;
+  }
 }
