@@ -1,8 +1,8 @@
-import ImageSequence from "@/components/home/ImageSequence";
+import HomeExperience from "@/components/home/HomeExperience";
 import { getSequenceAssets } from "@/lib/sequence";
 
 export default function Home() {
   const assets = getSequenceAssets();
 
-  return <ImageSequence assets={assets} />;
+  return <HomeExperience assets={assets} />;
 }

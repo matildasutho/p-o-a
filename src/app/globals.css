@@ -121,9 +121,8 @@ h1 {
 .sequence-slot--right {
   top: 50%;
   right: 0em;
-  max-width: 30vw;
+  max-width: 50vw;
   max-height: 100vh;
-
   transform: translateY(-50%);
   z-index: 2;
 }
@@ -149,4 +148,87 @@ h1 {
   .sequence-slot--left {
     width: 42vw;
   }
+}
+
+body.loading-active {
+  overflow: hidden;
+}
+
+.intro-loader {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--background);
+  opacity: 1;
+  transition: opacity 0.5s ease;
+  overflow: hidden;
+}
+
+.intro-loader--hiding {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.intro-loader__defs {
+  position: absolute;
+  width: 0;
+  height: 0;
+}
+
+.intro-loader__text {
+  font-size: clamp(3rem, 14vw, 11rem);
+  font-weight: 400;
+  letter-spacing: 0.01em;
+  color: var(--foreground);
+}
+
+.intro-loader__letter {
+  display: inline-block;
+  will-change: filter;
+}
+
+.loading-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  background: var(--background);
+  padding: var(--base);
+  opacity: 1;
+  transition: opacity 0.6s ease;
+  overflow: hidden;
+}
+
+.loading-screen--idle {
+  background: transparent;
+  pointer-events: none;
+}
+
+.loading-screen--closing {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.loading-screen__list {
+  height: 100%;
+  column-width: 220px;
+  column-gap: 2em;
+  column-fill: auto;
+}
+
+.loading-screen__word {
+  display: block;
+  color: var(--foreground);
+  text-align: left;
+  white-space: wrap;
+  opacity: 1;
+  transition: opacity 0.5s ease;
+  break-inside: avoid;
+}
+
+.loading-screen--idle .loading-screen__word {
+  color: #fff;
+  mix-blend-mode: difference;
 }
