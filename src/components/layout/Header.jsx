@@ -8,14 +8,18 @@ export default function Header() {
 
   return (
     <header className={isHome ? "header--pinned" : undefined}>
-      <p className={isHome ? "header--overlay" : undefined}>
-        <a href="/">
-          <strong>P-O-A</strong>
-        </a>{" "}
-        is a research-led design studio based in Naarm, Melbourne. We design
-        objects and experiences that are thoughtful, engaging, enduring and
-        sensitive to context. <a href="/information">Information</a> / Contact
-      </p>
+      <nav className={`site-nav${isHome ? " header--overlay" : ""}`}>
+        {pathname === "/information" ? (
+          <a href="/">P-O-A</a>
+        ) : (
+          <a href="/information">Information</a>
+        )}
+      </nav>
+      {isHome && (
+        <p className="site-intro header--overlay">
+          <a href="/">P-O-A</a> is a research-led design studio.
+        </p>
+      )}
     </header>
   );
 }

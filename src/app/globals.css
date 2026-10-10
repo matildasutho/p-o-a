@@ -1,9 +1,19 @@
 @import "tailwindcss";
 
+@font-face {
+  font-family: "Rosart";
+  src: url("/fonts/RosartTRIAL-Regular.otf") format("opentype");
+}
+
+@font-face {
+  font-family: "Nimbus Sans";
+  src: url("/fonts/NimbusSans-Regular.woff") format("woff");
+}
+
 :root {
   --background: #e1e1e1;
   --foreground: #000000;
-  --base: 22px;
+  --base: 40px;
 }
 * {
   box-sizing: border-box;
@@ -19,11 +29,11 @@ body {
 body {
   color: var(--foreground);
   background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: "Rosart";
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  font-size: 22px;
-  line-height: 28px;
+  font-size: 24px;
+  line-height: 1.2;
   padding: var(--base);
 }
 body::-webkit-scrollbar {
@@ -35,25 +45,68 @@ header {
 
 .header--pinned {
   position: fixed;
-  top: var(--base);
-  left: var(--base);
-  right: var(--base);
+  inset: var(--base);
   z-index: 10;
-  mix-blend-mode: difference;
+  pointer-events: none;
+  padding-bottom: 0;
+  /* mix-blend-mode: difference; */
+  color: #000;
 }
 
-.header--overlay {
-  color: #fff;
+.header--pinned a {
+  pointer-events: auto;
+}
+
+.site-nav {
+  text-align: center;
+}
+
+.site-intro {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  transform: translateY(-50%);
+  text-align: center;
+}
+
+.site-intro a {
+  text-decoration: none;
 }
 
 .sequence-counter {
   position: fixed;
-  right: var(--base);
+  left: 50%;
   bottom: var(--base);
+  transform: translateX(-50%);
   z-index: 10;
-  color: #fff;
-  mix-blend-mode: difference;
+  color: #000;
+  /* mix-blend-mode: difference; */
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.sequence-hover-label {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 10;
+  pointer-events: none;
+  color: #000;
+  /* mix-blend-mode: difference; */
+  white-space: nowrap;
+  will-change: transform;
+  font-size: 0.8em;
+}
+
+.cursor-trail {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 9;
+  pointer-events: none;
+  /* mix-blend-mode: difference; */
 }
 
 a {
@@ -99,7 +152,7 @@ h1 {
   height: 100dvh;
   z-index: -1;
   overflow: hidden;
-  background: #000;
+  background: var(--background);
 }
 
 /* Gives the page something to scroll — the stage above is fixed/pinned and
@@ -118,21 +171,29 @@ h1 {
   z-index: 0;
 }
 
+/* Overlay slots span the full viewport height on their half of the screen,
+   inset by 2rem from the outer edges. The media inside is scaled down to fit
+   (never cropped) so it always stays within the viewport. */
+.sequence-slot--right,
+.sequence-slot--left {
+  top: 0;
+  bottom: 0;
+  width: 50vw;
+  padding: 3em;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+}
+
 .sequence-slot--right {
-  top: 50%;
-  right: 0em;
-  max-width: 50vw;
-  max-height: 100vh;
-  transform: translateY(-50%);
+  right: 0;
+  justify-content: flex-end;
   z-index: 2;
 }
 
 .sequence-slot--left {
-  top: 50%;
-  left: 0em;
-  max-width: 50vw;
-  max-height: 100vh;
-  transform: translateY(-50%);
+  left: 0;
+  justify-content: flex-start;
   z-index: 1;
 }
 
@@ -143,10 +204,23 @@ h1 {
   object-fit: cover;
 }
 
+.sequence-slot--right .sequence-media,
+.sequence-slot--left .sequence-media {
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+/* On narrow screens half the viewport minus 3em of padding leaves almost no
+   room, so overlays get a wider slot (overlapping the centre) and only a
+   slim gutter at the sides. */
 @media (max-width: 768px) {
   .sequence-slot--right,
   .sequence-slot--left {
-    width: 42vw;
+    width: 70vw;
+    padding: 4em 16px;
   }
 }
 
@@ -158,77 +232,62 @@ body.loading-active {
   position: fixed;
   inset: 0;
   z-index: 30;
+  background: var(--background);
+  color: var(--foreground);
+  --intro-padding: var(--base);
+  padding: var(--intro-padding);
+  overflow: hidden;
+  font-family: "Nimbus Sans";
+}
+
+@media (max-width: 768px) {
+  .intro-loader {
+    --intro-padding: 16px;
+  }
+}
+
+.intro-loader__grid {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--background);
-  opacity: 1;
-  transition: opacity 0.5s ease;
-  overflow: hidden;
-}
-
-.intro-loader--hiding {
-  opacity: 0;
-  pointer-events: none;
-}
-
-.intro-loader__defs {
-  position: absolute;
-  width: 0;
-  height: 0;
-}
-
-.intro-loader__text {
-  font-size: clamp(3rem, 14vw, 11rem);
-  font-weight: 400;
-  letter-spacing: 0.01em;
-  color: var(--foreground);
-}
-
-.intro-loader__letter {
-  display: inline-block;
-  will-change: filter;
-}
-
-.loading-screen {
-  position: fixed;
-  inset: 0;
-  z-index: 20;
-  background: var(--background);
-  padding: var(--base);
-  opacity: 1;
-  transition: opacity 0.6s ease;
-  overflow: hidden;
-}
-
-.loading-screen--idle {
-  background: transparent;
-  pointer-events: none;
-}
-
-.loading-screen--closing {
-  opacity: 0;
-  pointer-events: none;
-}
-
-.loading-screen__list {
+  flex-direction: column;
+  justify-content: space-between;
   height: 100%;
-  column-width: 220px;
-  column-gap: 2em;
-  column-fill: auto;
+  /* Scales with whichever is tighter, so four rows fit the height and
+     three "POA"s fit the width on narrow screens. */
+  font-size: min(20vh, 13vw);
+  line-height: 1;
 }
 
-.loading-screen__word {
-  display: block;
-  color: var(--foreground);
-  text-align: left;
-  white-space: wrap;
-  opacity: 1;
-  transition: opacity 0.5s ease;
-  break-inside: avoid;
+.intro-loader__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
 
-.loading-screen--idle .loading-screen__word {
-  color: #fff;
-  mix-blend-mode: difference;
+.intro-loader__cell {
+  flex: 1 1 0;
+  white-space: nowrap;
+}
+
+.intro-loader__cell:nth-child(2) {
+  text-align: center;
+}
+
+.intro-loader__cell:nth-child(3) {
+  text-align: right;
+}
+
+.intro-loader__image {
+  position: absolute;
+  inset: var(--intro-padding);
+  width: calc(100% - var(--intro-padding) * 2);
+  height: calc(100% - var(--intro-padding) * 2);
+  max-width: none;
+  object-fit: contain;
+  z-index: 1;
+}
+
+.information {
+  margin: 0 auto;
+  text-align: center;
+  padding-bottom: 1em;
 }

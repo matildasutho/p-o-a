@@ -1,6 +1,6 @@
 export default function Information() {
   return (
-    <div>
+    <div className="information">
       Email us <a href="mailto:hihi@p-o-a.xyz">hihi@p-o-a.xyz</a>
       <br />
       <br />
