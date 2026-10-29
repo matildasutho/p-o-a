@@ -4,15 +4,20 @@ import { useCallback, useEffect, useState } from "react";
 import CursorTrail from "./CursorTrail";
 import ImageSequence from "./ImageSequence";
 import IntroLoader from "./IntroLoader";
+import { INTRO_SEEN_COOKIE } from "@/lib/intro";
 
 // Some browsers (notably iOS Safari) won't fully buffer a video before a user
 // gesture, so a video that hasn't settled by then stops holding up the intro.
 const VIDEO_PRELOAD_TIMEOUT_MS = 15000;
 
-// The splash plays when home is the page the browser loaded (first visit,
-// refresh or typed URL), but not when arriving by a link from another page of
-// the site, or on coming back to home later in the same visit. A client-side
-// navigation keeps this module alive, so the flag survives it.
+// The splash plays once per browser session. Once it has finished, a session
+// cookie tells the server to render home without it, which covers refreshes
+// and typed URLs.
+
+// Within a single page load it also never plays when arriving by a link from
+// another page of the site, or on coming back to home later in the same
+// visit. A client-side navigation keeps this module alive, so the flag
+// survives it.
 let homeShownThisDocument = false;
 
 function isDocumentEntryPage() {
@@ -27,7 +32,7 @@ function shouldSkipIntro() {
   return homeShownThisDocument || !isDocumentEntryPage();
 }
 
-export default function HomeExperience({ assets }) {
+export default function HomeExperience({ assets, introSeen = false }) {
   const [assetsReady, setAssetsReady] = useState(assets.length === 0);
   const [loading, setLoading] = useState(true);
 
@@ -81,7 +86,7 @@ export default function HomeExperience({ assets }) {
     };
   }, [assets]);
 
-  const [introSkipped] = useState(shouldSkipIntro);
+  const [introSkipped] = useState(() => introSeen || shouldSkipIntro());
 
   useEffect(() => {
     homeShownThisDocument = true;
@@ -89,7 +94,10 @@ export default function HomeExperience({ assets }) {
 
   const showIntro = loading && !introSkipped;
 
-  const handleIntroDone = useCallback(() => setLoading(false), []);
+  const handleIntroDone = useCallback(() => {
+    document.cookie = `${INTRO_SEEN_COOKIE}=1; path=/; SameSite=Lax`;
+    setLoading(false);
+  }, []);
 
   // Hides the page text under the loader; removing the class blurs it in.
   useEffect(() => {
