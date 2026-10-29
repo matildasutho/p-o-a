@@ -427,4 +427,7 @@ body.page-leaving .sequence-counter {
   .information {
     max-width: none;
   }
+  .intro-loader__definitions {
+    width: calc(100% - var(--intro-padding) * 2);
+  }
 }
