@@ -2,14 +2,9 @@
 
 import { useEffect, useRef } from "react";
 
-// How long each bit of the line stays on screen before it has fully faded.
 const TRAIL_LIFETIME_MS = 15000;
-// Line thickness in CSS pixels. Drawn at device resolution, so 0.5 is a
-// single hairline pixel on retina screens.
 const TRAIL_WIDTH = 0.5;
 
-// A very fine white line that follows the mouse and fades away behind it.
-// Uses the same difference blend as the label so it reads on any image.
 export default function CursorTrail() {
   const canvasRef = useRef(null);
 
@@ -37,8 +32,6 @@ export default function CursorTrail() {
       context.lineCap = "round";
       context.lineJoin = "round";
 
-      // Each segment fades on its own, so the tail dissolves while the
-      // newest part of the line stays crisp.
       for (let i = 1; i < points.length; i += 1) {
         const from = points[i - 1];
         const to = points[i];
@@ -62,7 +55,6 @@ export default function CursorTrail() {
         x: event.clientX,
         y: event.clientY,
         time: performance.now(),
-        // Don't join the line across a jump in and out of the window.
         isBreak: isOutside,
       });
       isOutside = false;

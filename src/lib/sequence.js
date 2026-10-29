@@ -3,27 +3,12 @@ import path from "path";
 
 const ASSETS_DIR = path.join(process.cwd(), "public", "assets");
 const VIDEO_EXTENSIONS = new Set([".mp4", ".mov", ".webm"]);
-// Matches "POA-17-02-" style prefixes: the project number, then an optional
-// sub-number for projects with several assets. The older "17 - " style still
-// matches too.
 const NUMBER_PREFIX = /^(?:POA-)?(\d+)(?:-(\d{2}))?\s*-\s*/i;
 
-// Where to anchor the crop for full-screen assets, keyed by project number.
-// Anything not listed crops from the centre.
 const CROP_POSITIONS = {
-  // The floor is the focus, so crop the top rather than the bottom.
   5: "center bottom",
 };
 
-// Reads public/assets and orders the images/videos by the numeric prefix in
-// each filename (matching the sequence in SEQUENCING_TRANSITION_Oct26.pdf).
-// Drop new numbered files straight into that folder — no code changes needed
-// here. Odd positions show full screen and even positions show small, so a
-// missing or extra file shifts every asset after it.
-// A .gif sharing its number with another file (e.g. POA-17-02 alongside
-// POA-17-01) isn't a step of its own: it's layered over that file instead.
-// Files without a numeric prefix (still awaiting a number from the client)
-// are appended to the end so nothing gets silently skipped.
 export function getSequenceAssets() {
   const files = fs
     .readdirSync(ASSETS_DIR)

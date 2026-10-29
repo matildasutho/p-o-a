@@ -2,12 +2,8 @@
 
 import { useEffect } from "react";
 
-// Matches the text-blur-out animation in globals.css.
 const LEAVE_MS = 80;
 
-// Holds internal link clicks until the page's text has blurred out (see the
-// text-blur-* animations in globals.css), then navigates. The next page's
-// text blurs in on its own as it loads.
 export default function PageTransitions() {
   useEffect(() => {
     let timer = null;
@@ -28,8 +24,6 @@ export default function PageTransitions() {
           : null;
       if (!link || link.target === "_blank" || link.hasAttribute("download"))
         return;
-      // Leaves mailto: and other sites alone (their origin doesn't match),
-      // and links back to the page already showing.
       const url = new URL(link.href, window.location.href);
       if (
         url.origin !== window.location.origin ||
@@ -45,9 +39,8 @@ export default function PageTransitions() {
       timer = setTimeout(() => window.location.assign(url.href), LEAVE_MS);
     }
 
-    // The back button can restore this page exactly as it was left, still
-    // blurred out.
     function handlePageShow(event) {
+      // restored from back/forward cache
       if (event.persisted) document.body.classList.remove("page-leaving");
     }
 

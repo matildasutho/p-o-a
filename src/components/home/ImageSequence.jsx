@@ -2,42 +2,23 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-// How long one step's fade takes.
 const STEP_DURATION_MS = 500;
 
-// How far a finger has to travel before it counts as a swipe rather than a
-// tap. Taps go through the click handler like a mouse click.
 const SWIPE_THRESHOLD_PX = 40;
-// Trackpad/wheel distance that counts as one swipe. Trackpads keep sending
-// momentum events after the fingers lift, so once a step fires the wheel is
-// ignored until it has gone quiet for WHEEL_IDLE_MS.
 const WHEEL_THRESHOLD = 30;
 const WHEEL_IDLE_MS = 200;
-// Firefox can report wheel deltas in lines rather than pixels.
+// firefox can report wheel deltas in lines
 const WHEEL_LINE_HEIGHT = 16;
 
-// Each overlay image is placed once, when it appears, nudged up or down from
-// its usual spot by this fraction of the cursor's vertical distance from the
-// screen centre. It then stays put until it clears.
 const OVERLAY_OFFSET_RATIO = 0.08;
 const NO_OFFSET = { x: 0, y: 0 };
 
-// Gap between the cursor and the floating asset label.
 const LABEL_CURSOR_GAP = 16;
-// Spring the label uses to chase the cursor. Lower stiffness trails further
-// behind. Damping is how much speed the label keeps each frame: lower values
-// settle sooner with less overshoot, higher values wobble more.
 const LABEL_SPRING_STIFFNESS = 1;
 const LABEL_SPRING_DAMPING = 0.1;
 
 const BLANK = { background: null, overlay: null, side: null, current: null };
 
-// The states the sequence steps through, following
-// SEQUENCING_TRANSITION_Oct26.pdf: a small asset fades in over the full-screen
-// one, the full-screen asset changes underneath it, then the small asset
-// clears so the new full-screen one is seen on its own. Small assets alternate
-// sides, starting on the right. After the last state it loops back to the
-// first. `current` is the asset the counter shows.
 function buildStates(total) {
   const states = [{ background: 0, overlay: null, side: null, current: 0 }];
   let side = "left";
@@ -62,11 +43,8 @@ export default function ImageSequence({ assets }) {
   const total = assets.length;
   const states = useMemo(() => buildStates(total), [total]);
 
-  // -1 is the bare page before the first click.
   const [index, setIndex] = useState(-1);
-  // The step currently fading in, if any: { to, progress }.
   const [transition, setTransition] = useState(null);
-  // Where each overlay asset was placed, keyed by its index in `assets`.
   const [offsets, setOffsets] = useState({});
 
   const [hoverLabel, setHoverLabel] = useState(null);
@@ -74,9 +52,6 @@ export default function ImageSequence({ assets }) {
   const labelRef = useRef(null);
   const pointerRef = useRef(null);
 
-  // Finds the topmost visible asset under the last known cursor position.
-  // Media that's mostly faded out is skipped, so the label switches over
-  // halfway through a crossfade rather than at the end.
   const updateHoverLabel = useCallback(() => {
     const pointer = pointerRef.current;
     if (!pointer) {
@@ -97,7 +72,6 @@ export default function ImageSequence({ assets }) {
     const reduceMotion = window.matchMedia(
       "(prefers-reduced-motion: reduce)",
     ).matches;
-    // The label's own sprung position, separate from the real cursor.
     const spring = { x: 0, y: 0, vx: 0, vy: 0 };
     let frame = null;
     let lastTime = 0;
@@ -115,8 +89,6 @@ export default function ImageSequence({ assets }) {
         frame = null;
         return;
       }
-      // Scale each step by elapsed time so the spring feels the same on
-      // 60Hz and 120Hz screens.
       const steps = Math.min((now - lastTime) / (1000 / 60), 4);
       lastTime = now;
       for (const [axis, velocity] of [
@@ -142,8 +114,6 @@ export default function ImageSequence({ assets }) {
       if (event.pointerType !== "mouse") return;
       const isEntering = pointerRef.current === null;
       pointerRef.current = { x: event.clientX, y: event.clientY };
-      // Arriving from outside the window, start at the cursor rather than
-      // flying in from wherever the label was last left.
       if (isEntering) setPointerInside(true);
       if (isEntering || reduceMotion) {
         Object.assign(spring, {
@@ -182,8 +152,6 @@ export default function ImageSequence({ assets }) {
     };
   }, [updateHoverLabel]);
 
-  // The assets change under a still cursor as the sequence advances, so
-  // re-check what's being hovered after every render too.
   useEffect(() => {
     updateHoverLabel();
   });
@@ -193,8 +161,6 @@ export default function ImageSequence({ assets }) {
 
     let frame = null;
     let startTime = 0;
-    // Local copies of `index` and `transition.to`, so handlers don't need to
-    // re-subscribe every frame.
     let from = -1;
     let to = null;
 
@@ -217,10 +183,7 @@ export default function ImageSequence({ assets }) {
       frame = requestAnimationFrame(tick);
     }
 
-    // Moves one state forward (1) or back (-1). `point` is where the gesture
-    // happened, used to nudge a newly appearing overlay.
     function step(direction, point) {
-      // A gesture mid-fade snaps the current step to its end first.
       if (frame !== null) finishStep();
       if (from < 0 && direction < 0) return;
       const next =
@@ -229,8 +192,6 @@ export default function ImageSequence({ assets }) {
       const target = states[next];
 
       if (target.overlay != null && target.overlay !== current.overlay) {
-        // Vertical only, so the gap to the screen edge is always the grid
-        // margin on both sides.
         const offset = point
           ? {
               x: 0,
@@ -252,7 +213,6 @@ export default function ImageSequence({ assets }) {
       step(1, { x: event.clientX, y: event.clientY });
     }
 
-    // Swipe left or up for the next step, right or down to go back.
     let touchStart = null;
 
     function handleTouchStart(event) {
@@ -263,8 +223,6 @@ export default function ImageSequence({ assets }) {
     }
 
     function handleTouchMove(event) {
-      // Stops the page bouncing or pull-to-refresh fighting the swipe, while
-      // leaving pinch-zoom alone.
       if (event.touches.length === 1) event.preventDefault();
     }
 
@@ -279,17 +237,12 @@ export default function ImageSequence({ assets }) {
       step(delta < 0 ? 1 : -1, { x: touch.clientX, y: touch.clientY });
     }
 
-    // Trackpad swipes and mouse wheels: right or down for the next step, left
-    // or up to go back.
     let wheelDistance = 0;
     let wheelLocked = false;
     let wheelTimer = null;
 
     function handleWheel(event) {
-      // Pinch-to-zoom on a trackpad arrives as a wheel event with ctrlKey.
-      if (event.ctrlKey) return;
-      // Otherwise a sideways swipe would also trigger the browser's back/
-      // forward navigation.
+      if (event.ctrlKey) return; // trackpad pinch-zoom
       event.preventDefault();
       clearTimeout(wheelTimer);
       wheelTimer = setTimeout(() => {
@@ -337,10 +290,6 @@ export default function ImageSequence({ assets }) {
     total,
   ).padStart(2, "0")}`;
 
-  // Work out what the background layer and the single overlay layer should
-  // render this frame, as plain values, before turning them into markup.
-  // Anything being replaced fades out over the first half of the step and its
-  // replacement fades in over the second, so the two are never both visible.
   let background = fromState.background;
   let bgOpacity = 1;
   let overlay = fromState.overlay;
@@ -355,8 +304,6 @@ export default function ImageSequence({ assets }) {
     const fadeIn = (progress - 0.5) / 0.5;
 
     if (bgChanges && overlayChanges) {
-      // Looping back to the start: everything visible fades out together,
-      // then the first state fades in.
       if (firstHalf) {
         bgOpacity = fadeOut;
         overlayOpacity = fadeOut;
@@ -369,7 +316,6 @@ export default function ImageSequence({ assets }) {
       }
     } else if (bgChanges) {
       if (background == null) {
-        // Nothing to fade out yet, so the first asset fades straight in.
         background = toState.background;
         bgOpacity = progress;
       } else if (firstHalf) {
@@ -384,7 +330,6 @@ export default function ImageSequence({ assets }) {
         overlaySide = toState.side;
         overlayOpacity = progress;
       } else if (toState.overlay == null) {
-        // Clearing to the full-screen asset on its own.
         overlayOpacity = 1 - progress;
       } else if (firstHalf) {
         overlayOpacity = fadeOut;
@@ -400,8 +345,6 @@ export default function ImageSequence({ assets }) {
   const overlayAsset = overlay == null ? null : assets[overlay];
   const overlayOffset = offsets[overlay] ?? NO_OFFSET;
 
-  // Before the first click the tooltip prompts to start. Asset labels are
-  // switched off for now, so once the sequence starts it stays hidden.
   const hasStarted = index >= 0 || transition != null;
   const tooltip = !hasStarted && pointerInside ? "click to start" : null;
 
@@ -411,8 +354,6 @@ export default function ImageSequence({ assets }) {
       {/* <div
         ref={labelRef}
         className="sequence-hover-label"
-        // Its position is set straight on the element by the pointermove
-        // handler, so following the cursor doesn't re-render the sequence.
         style={{ opacity: tooltip ? 1 : 0 }}
         aria-hidden="true"
       >
@@ -460,8 +401,6 @@ function SequenceMedia({ asset, style }) {
     );
   }
 
-  // Layers (e.g. the Post Hoc gif) fade with their base as one, and multiply
-  // over it so their white background drops out.
   return (
     <div
       className="sequence-media sequence-media--layered"

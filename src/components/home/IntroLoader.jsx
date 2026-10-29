@@ -2,10 +2,6 @@
 
 import { useEffect, useRef, useState } from "react";
 
-// Each frame is four rows of [left, centre, right] text, plus one large
-// letter image laid over the top. Frames hard-cut — no fades.
-// Swap the placeholder SVGs in public/intro/ for the final letter images
-// (keep the filenames, or update `image` below).
 const FRAMES = [
   {
     image: "/intro/P.svg",
@@ -38,17 +34,10 @@ const FRAMES = [
 
 const FRAME_MS = 700;
 
-// The splash opens on the definitions animation, before the frames above.
-// It plays through once — its loop is 6.3s — timed from when it has loaded
-// so it isn't cut short on a slow connection.
 const DEFINITIONS_SRC = "/POA_Definitions.gif";
 const DEFINITIONS_MS = 6300;
-// Play at least one full loop of frames before the loader can close, and
-// only ever close after the last frame of a loop.
 const MIN_FRAMES = FRAMES.length;
 
-// Keyframes for the loading bar: bursts and stalls at random, like a real
-// loader, but always full by the time the gif ends.
 function loaderBarKeyframes() {
   const keyframes = [{ offset: 0, transform: "scaleX(0)" }];
   let time = 0;
@@ -56,7 +45,6 @@ function loaderBarKeyframes() {
   for (;;) {
     time += 0.04 + Math.random() * 0.14;
     if (time >= 0.95) break;
-    // Now and then it hangs for a moment.
     if (Math.random() > 0.25) {
       progress = Math.min(progress + Math.random() * 0.22, 0.97);
     }
@@ -71,7 +59,6 @@ export default function IntroLoader({ ready, onDone }) {
   const [showDefinitions, setShowDefinitions] = useState(true);
   const definitionsRef = useRef(null);
   const barRef = useRef(null);
-  // Read from the timer so a change in readiness doesn't restart the frame.
   const readyRef = useRef(ready);
 
   useEffect(() => {
@@ -82,7 +69,6 @@ export default function IntroLoader({ ready, onDone }) {
     const img = definitionsRef.current;
     let timer = null;
     let barAnimation = null;
-    // The loading bar only starts filling once the gif is playing.
     function start() {
       clearTimeout(timer);
       barAnimation?.cancel();
@@ -96,7 +82,6 @@ export default function IntroLoader({ ready, onDone }) {
     function skip() {
       setShowDefinitions(false);
     }
-    // It may have finished loading before React attached its listeners.
     if (img.complete && img.naturalWidth > 0) {
       start();
     } else {
@@ -115,10 +100,6 @@ export default function IntroLoader({ ready, onDone }) {
     if (showDefinitions) return undefined;
     const timer = setTimeout(() => {
       const next = tick + 1;
-      // Close at the end of a full P-O-A loop, once at least one loop has
-      // played and every sequence asset has loaded. Deciding here, before
-      // the next frame renders, stops the first frame flashing back up just
-      // as the loader is removed.
       if (
         next >= MIN_FRAMES &&
         next % FRAMES.length === 0 &&
@@ -135,11 +116,6 @@ export default function IntroLoader({ ready, onDone }) {
   const frameIndex = tick % FRAMES.length;
   const frame = FRAMES[frameIndex];
 
-  // Every letter image stays mounted, from the definitions phase onward, and
-  // only its visibility is toggled. Swapping a single <img>'s src would load
-  // and decode the new file asynchronously, so the letter would land a beat
-  // after the text grid; toggling an already-decoded image paints in the
-  // same frame as the grid.
   const letterImages = FRAMES.map(({ image }, index) => (
     <img
       key={image}
