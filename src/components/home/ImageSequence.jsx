@@ -1,21 +1,24 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import CursorTrail from "./CursorTrail";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-const TURNS = ["background", "overlay"];
-
-// "click" advances one step per click with a timed fade; "scroll" ties the
-// fade to scroll distance.
-const NAV_MODE = "click";
-
-const REVEAL_DISTANCE = 200;
-// How long one click-triggered fade takes.
+// How long one step's fade takes.
 const STEP_DURATION_MS = 500;
 
-// Each overlay image is placed once, when it appears, offset from its usual
-// spot by this fraction of the cursor's distance from the screen centre. It
-// then stays put until the next overlay replaces it.
+// How far a finger has to travel before it counts as a swipe rather than a
+// tap. Taps go through the click handler like a mouse click.
+const SWIPE_THRESHOLD_PX = 40;
+// Trackpad/wheel distance that counts as one swipe. Trackpads keep sending
+// momentum events after the fingers lift, so once a step fires the wheel is
+// ignored until it has gone quiet for WHEEL_IDLE_MS.
+const WHEEL_THRESHOLD = 30;
+const WHEEL_IDLE_MS = 200;
+// Firefox can report wheel deltas in lines rather than pixels.
+const WHEEL_LINE_HEIGHT = 16;
+
+// Each overlay image is placed once, when it appears, nudged up or down from
+// its usual spot by this fraction of the cursor's vertical distance from the
+// screen centre. It then stays put until it clears.
 const OVERLAY_OFFSET_RATIO = 0.08;
 const NO_OFFSET = { x: 0, y: 0 };
 
@@ -27,23 +30,44 @@ const LABEL_CURSOR_GAP = 16;
 const LABEL_SPRING_STIFFNESS = 1;
 const LABEL_SPRING_DAMPING = 0.1;
 
+const BLANK = { background: null, overlay: null, side: null, current: null };
+
+// The states the sequence steps through, following
+// SEQUENCING_TRANSITION_Oct26.pdf: a small asset fades in over the full-screen
+// one, the full-screen asset changes underneath it, then the small asset
+// clears so the new full-screen one is seen on its own. Small assets alternate
+// sides, starting on the right. After the last state it loops back to the
+// first. `current` is the asset the counter shows.
+function buildStates(total) {
+  const states = [{ background: 0, overlay: null, side: null, current: 0 }];
+  let side = "left";
+  for (let i = 1; i < total; i += 2) {
+    side = side === "right" ? "left" : "right";
+    const { background } = states[states.length - 1];
+    states.push({ background, overlay: i, side, current: i });
+    if (i + 1 < total) {
+      states.push({ background: i + 1, overlay: i, side, current: i + 1 });
+      states.push({
+        background: i + 1,
+        overlay: null,
+        side: null,
+        current: i + 1,
+      });
+    }
+  }
+  return states;
+}
+
 export default function ImageSequence({ assets }) {
   const total = assets.length;
+  const states = useMemo(() => buildStates(total), [total]);
 
-  const [committed, setCommitted] = useState(() => ({
-    background: null,
-    overlaySide: null,
-    overlayAsset: null,
-    overlayOffset: NO_OFFSET,
-  }));
-  const [pendingOffset, setPendingOffset] = useState(NO_OFFSET);
-  const [pendingProgress, setPendingProgress] = useState(0);
-
-  // Starts on the bare background; the first click brings in the first asset.
-  const revealedCount = useRef(0);
-  const totalDistance = useRef(0);
-  const lastScrollY = useRef(0);
-  const pendingOffsetRef = useRef(NO_OFFSET);
+  // -1 is the bare page before the first click.
+  const [index, setIndex] = useState(-1);
+  // The step currently fading in, if any: { to, progress }.
+  const [transition, setTransition] = useState(null);
+  // Where each overlay asset was placed, keyed by its index in `assets`.
+  const [offsets, setOffsets] = useState({});
 
   const [hoverLabel, setHoverLabel] = useState(null);
   const [pointerInside, setPointerInside] = useState(false);
@@ -164,54 +188,23 @@ export default function ImageSequence({ assets }) {
     updateHoverLabel();
   });
 
-  const commitSteps = useCallback(
-    (targetRevealedCount) => {
-      if (targetRevealedCount <= revealedCount.current) return;
-      const startIndex = revealedCount.current;
-      setCommitted((prev) => {
-        let next = prev;
-        for (let i = startIndex; i < targetRevealedCount; i += 1) {
-          const posInLoop = i % total;
-          if (posInLoop === 0) {
-            next = {
-              background: 0,
-              overlaySide: null,
-              overlayAsset: null,
-              overlayOffset: NO_OFFSET,
-            };
-            continue;
-          }
-          const turn = TURNS[i % TURNS.length];
-          if (turn === "background") {
-            next = { ...next, background: posInLoop };
-          } else {
-            const side = next.overlaySide === "right" ? "left" : "right";
-            next = {
-              ...next,
-              overlaySide: side,
-              overlayAsset: posInLoop,
-              overlayOffset: pendingOffsetRef.current,
-            };
-          }
-        }
-        return next;
-      });
-      revealedCount.current = targetRevealedCount;
-    },
-    [total],
-  );
-
   useEffect(() => {
-    if (total === 0 || NAV_MODE !== "click") return undefined;
+    if (total === 0) return undefined;
 
     let frame = null;
     let startTime = 0;
+    // Local copies of `index` and `transition.to`, so handlers don't need to
+    // re-subscribe every frame.
+    let from = -1;
+    let to = null;
 
     function finishStep() {
       cancelAnimationFrame(frame);
       frame = null;
-      commitSteps(revealedCount.current + 1);
-      setPendingProgress(0);
+      from = to;
+      to = null;
+      setIndex(from);
+      setTransition(null);
     }
 
     function tick(now) {
@@ -220,145 +213,201 @@ export default function ImageSequence({ assets }) {
         finishStep();
         return;
       }
-      setPendingProgress(progress);
+      setTransition({ to, progress });
+      frame = requestAnimationFrame(tick);
+    }
+
+    // Moves one state forward (1) or back (-1). `point` is where the gesture
+    // happened, used to nudge a newly appearing overlay.
+    function step(direction, point) {
+      // A gesture mid-fade snaps the current step to its end first.
+      if (frame !== null) finishStep();
+      if (from < 0 && direction < 0) return;
+      const next =
+        from < 0 ? 0 : (from + direction + states.length) % states.length;
+      const current = from < 0 ? BLANK : states[from];
+      const target = states[next];
+
+      if (target.overlay != null && target.overlay !== current.overlay) {
+        // Vertical only, so the gap to the screen edge is always the grid
+        // margin on both sides.
+        const offset = point
+          ? {
+              x: 0,
+              y: (point.y - window.innerHeight / 2) * OVERLAY_OFFSET_RATIO,
+            }
+          : NO_OFFSET;
+        setOffsets((prev) => ({ ...prev, [target.overlay]: offset }));
+      }
+
+      to = next;
+      startTime = performance.now();
+      setTransition({ to, progress: 0 });
       frame = requestAnimationFrame(tick);
     }
 
     function handleClick(event) {
       if (event.target instanceof Element && event.target.closest("a, button"))
         return;
-      // A click mid-fade snaps the current step to its end and starts the next.
-      if (frame !== null) finishStep();
-      const offset = {
-        x: (event.clientX - window.innerWidth / 2) * OVERLAY_OFFSET_RATIO,
-        y: (event.clientY - window.innerHeight / 2) * OVERLAY_OFFSET_RATIO,
-      };
-      pendingOffsetRef.current = offset;
-      setPendingOffset(offset);
-      startTime = performance.now();
-      frame = requestAnimationFrame(tick);
+      step(1, { x: event.clientX, y: event.clientY });
+    }
+
+    // Swipe left or up for the next step, right or down to go back.
+    let touchStart = null;
+
+    function handleTouchStart(event) {
+      touchStart =
+        event.touches.length === 1
+          ? { x: event.touches[0].clientX, y: event.touches[0].clientY }
+          : null;
+    }
+
+    function handleTouchMove(event) {
+      // Stops the page bouncing or pull-to-refresh fighting the swipe, while
+      // leaving pinch-zoom alone.
+      if (event.touches.length === 1) event.preventDefault();
+    }
+
+    function handleTouchEnd(event) {
+      if (!touchStart) return;
+      const touch = event.changedTouches[0];
+      const dx = touch.clientX - touchStart.x;
+      const dy = touch.clientY - touchStart.y;
+      touchStart = null;
+      if (Math.max(Math.abs(dx), Math.abs(dy)) < SWIPE_THRESHOLD_PX) return;
+      const delta = Math.abs(dx) > Math.abs(dy) ? dx : dy;
+      step(delta < 0 ? 1 : -1, { x: touch.clientX, y: touch.clientY });
+    }
+
+    // Trackpad swipes and mouse wheels: right or down for the next step, left
+    // or up to go back.
+    let wheelDistance = 0;
+    let wheelLocked = false;
+    let wheelTimer = null;
+
+    function handleWheel(event) {
+      // Pinch-to-zoom on a trackpad arrives as a wheel event with ctrlKey.
+      if (event.ctrlKey) return;
+      // Otherwise a sideways swipe would also trigger the browser's back/
+      // forward navigation.
+      event.preventDefault();
+      clearTimeout(wheelTimer);
+      wheelTimer = setTimeout(() => {
+        wheelLocked = false;
+        wheelDistance = 0;
+      }, WHEEL_IDLE_MS);
+      if (wheelLocked) return;
+
+      const scale = event.deltaMode === 1 ? WHEEL_LINE_HEIGHT : 1;
+      wheelDistance +=
+        (Math.abs(event.deltaX) > Math.abs(event.deltaY)
+          ? event.deltaX
+          : event.deltaY) * scale;
+      if (Math.abs(wheelDistance) < WHEEL_THRESHOLD) return;
+      wheelLocked = true;
+      step(wheelDistance > 0 ? 1 : -1, pointerRef.current);
     }
 
     window.addEventListener("click", handleClick);
+    window.addEventListener("touchstart", handleTouchStart, { passive: true });
+    window.addEventListener("touchmove", handleTouchMove, { passive: false });
+    window.addEventListener("touchend", handleTouchEnd);
+    window.addEventListener("wheel", handleWheel, { passive: false });
     return () => {
       window.removeEventListener("click", handleClick);
+      window.removeEventListener("touchstart", handleTouchStart);
+      window.removeEventListener("touchmove", handleTouchMove);
+      window.removeEventListener("touchend", handleTouchEnd);
+      window.removeEventListener("wheel", handleWheel);
       cancelAnimationFrame(frame);
+      clearTimeout(wheelTimer);
     };
-  }, [total, commitSteps]);
-
-  useEffect(() => {
-    if (total === 0 || NAV_MODE !== "scroll") return undefined;
-
-    lastScrollY.current = window.scrollY;
-
-    function handleScroll() {
-      const scrollY = window.scrollY;
-      totalDistance.current += Math.abs(scrollY - lastScrollY.current);
-      lastScrollY.current = scrollY;
-
-      const units = totalDistance.current / REVEAL_DISTANCE;
-      const targetRevealedCount = Math.floor(units);
-
-      commitSteps(targetRevealedCount);
-
-      setPendingProgress(units - Math.floor(units));
-
-      const maxScroll =
-        document.documentElement.scrollHeight - window.innerHeight;
-      const margin = window.innerHeight * 2;
-      if (
-        maxScroll > margin * 2 &&
-        (scrollY < margin || scrollY > maxScroll - margin)
-      ) {
-        const target = maxScroll / 2;
-        window.scrollTo(0, target);
-        lastScrollY.current = target;
-      }
-    }
-
-    window.addEventListener("scroll", handleScroll, { passive: true });
-    return () => window.removeEventListener("scroll", handleScroll);
-  }, [total, commitSteps]);
+  }, [total, states]);
 
   if (total === 0) {
     return <div className="sequence-stage" />;
   }
 
-  const posInLoop = revealedCount.current % total;
-  const isResetTransition = posInLoop === 0 && revealedCount.current > 0;
-  const pendingTurn = TURNS[revealedCount.current % TURNS.length];
-  const pendingAssetIndex = isResetTransition ? 0 : posInLoop;
-  const pendingAsset = assets[pendingAssetIndex];
-  const pendingSide = committed.overlaySide === "right" ? "left" : "right";
+  const fromState = index < 0 ? BLANK : states[index];
+  const toState = transition ? states[transition.to] : null;
+  const progress = transition?.progress ?? 0;
 
-  const currentAssetNumber = ((revealedCount.current - 1) % total) + 1;
+  const currentAssetNumber = fromState.current == null ? 0 : fromState.current + 1;
   const counterLabel = `${String(currentAssetNumber).padStart(2, "0")} / ${String(
     total,
   ).padStart(2, "0")}`;
 
   // Work out what the background layer and the single overlay layer should
   // render this frame, as plain values, before turning them into markup.
-  let bgAsset =
-    committed.background == null ? null : assets[committed.background];
+  // Anything being replaced fades out over the first half of the step and its
+  // replacement fades in over the second, so the two are never both visible.
+  let background = fromState.background;
   let bgOpacity = 1;
-  let overlaySide = committed.overlaySide;
-  let overlayAsset =
-    committed.overlayAsset == null ? null : assets[committed.overlayAsset];
-  let overlayOpacity = overlayAsset ? 1 : 0;
-  let overlayOffset = committed.overlayOffset;
+  let overlay = fromState.overlay;
+  let overlaySide = fromState.side;
+  let overlayOpacity = 1;
 
-  if (isResetTransition) {
-    if (pendingProgress < 0.5) {
-      // Everything currently visible fades out together.
-      const opacity = 1 - pendingProgress / 0.5;
-      bgOpacity = opacity;
-      overlayOpacity = overlayAsset ? opacity : 0;
-    } else {
-      // Then only the background fades the first image back in.
-      bgAsset = assets[0];
-      bgOpacity = (pendingProgress - 0.5) / 0.5;
-      overlayAsset = null;
-      overlayOpacity = 0;
-    }
-  } else if (pendingTurn === "background") {
-    if (bgAsset == null) {
-      // Nothing to fade out yet, so the first asset fades straight in.
-      bgAsset = pendingAsset;
-      bgOpacity = pendingProgress;
-    } else if (pendingProgress < 0.5) {
-      bgOpacity = 1 - pendingProgress / 0.5;
-    } else {
-      bgAsset = pendingAsset;
-      bgOpacity = (pendingProgress - 0.5) / 0.5;
-    }
-  } else {
-    // An overlay turn: the previous overlay (if any) fades away, then the
-    // next one fades in on the opposite side — the two are never both
-    // visible at once.
-    if (committed.overlayAsset == null) {
-      overlaySide = pendingSide;
-      overlayAsset = pendingAsset;
-      overlayOffset = pendingOffset;
-      overlayOpacity = pendingProgress;
-    } else if (pendingProgress < 0.5) {
-      overlayOpacity = 1 - pendingProgress / 0.5;
-    } else {
-      overlaySide = pendingSide;
-      overlayAsset = pendingAsset;
-      overlayOffset = pendingOffset;
-      overlayOpacity = (pendingProgress - 0.5) / 0.5;
+  if (toState) {
+    const bgChanges = toState.background !== fromState.background;
+    const overlayChanges = toState.overlay !== fromState.overlay;
+    const firstHalf = progress < 0.5;
+    const fadeOut = 1 - progress / 0.5;
+    const fadeIn = (progress - 0.5) / 0.5;
+
+    if (bgChanges && overlayChanges) {
+      // Looping back to the start: everything visible fades out together,
+      // then the first state fades in.
+      if (firstHalf) {
+        bgOpacity = fadeOut;
+        overlayOpacity = fadeOut;
+      } else {
+        background = toState.background;
+        overlay = toState.overlay;
+        overlaySide = toState.side;
+        bgOpacity = fadeIn;
+        overlayOpacity = fadeIn;
+      }
+    } else if (bgChanges) {
+      if (background == null) {
+        // Nothing to fade out yet, so the first asset fades straight in.
+        background = toState.background;
+        bgOpacity = progress;
+      } else if (firstHalf) {
+        bgOpacity = fadeOut;
+      } else {
+        background = toState.background;
+        bgOpacity = fadeIn;
+      }
+    } else if (overlayChanges) {
+      if (overlay == null) {
+        overlay = toState.overlay;
+        overlaySide = toState.side;
+        overlayOpacity = progress;
+      } else if (toState.overlay == null) {
+        // Clearing to the full-screen asset on its own.
+        overlayOpacity = 1 - progress;
+      } else if (firstHalf) {
+        overlayOpacity = fadeOut;
+      } else {
+        overlay = toState.overlay;
+        overlaySide = toState.side;
+        overlayOpacity = fadeIn;
+      }
     }
   }
 
+  const bgAsset = background == null ? null : assets[background];
+  const overlayAsset = overlay == null ? null : assets[overlay];
+  const overlayOffset = offsets[overlay] ?? NO_OFFSET;
+
   // Before the first click the tooltip prompts to start. Asset labels are
   // switched off for now, so once the sequence starts it stays hidden.
-  const hasStarted = committed.background != null || pendingProgress > 0;
+  const hasStarted = index >= 0 || transition != null;
   const tooltip = !hasStarted && pointerInside ? "click to start" : null;
 
   return (
     <>
       <div className="sequence-counter">{counterLabel}</div>
-      <CursorTrail />
       {/* <div
         ref={labelRef}
         className="sequence-hover-label"
@@ -372,7 +421,11 @@ export default function ImageSequence({ assets }) {
       <div className="sequence-stage">
         <div className="sequence-slot sequence-slot--background">
           {bgAsset && (
-            <SequenceMedia asset={bgAsset} style={{ opacity: bgOpacity }} />
+            <SequenceMedia
+              key={bgAsset.src}
+              asset={bgAsset}
+              style={{ opacity: bgOpacity }}
+            />
           )}
         </div>
         {overlayAsset && (
@@ -383,25 +436,59 @@ export default function ImageSequence({ assets }) {
             }}
           >
             <SequenceMedia
+              key={overlayAsset.src}
               asset={overlayAsset}
               style={{ opacity: overlayOpacity }}
             />
           </div>
         )}
       </div>
-      {NAV_MODE === "scroll" && (
-        <div className="sequence-scroll-spacer" aria-hidden="true" />
-      )}
     </>
   );
 }
 
 function SequenceMedia({ asset, style }) {
+  const cropStyle = asset.position ? { objectPosition: asset.position } : null;
+
+  if (asset.layers.length === 0) {
+    return (
+      <MediaElement
+        asset={asset}
+        className="sequence-media"
+        style={{ ...style, ...cropStyle }}
+      />
+    );
+  }
+
+  // Layers (e.g. the Post Hoc gif) fade with their base as one, and multiply
+  // over it so their white background drops out.
+  return (
+    <div
+      className="sequence-media sequence-media--layered"
+      style={style}
+      data-label={asset.label}
+    >
+      <MediaElement
+        asset={asset}
+        className="sequence-layer-base"
+        style={cropStyle}
+      />
+      {asset.layers.map((layer) => (
+        <MediaElement
+          key={layer.src}
+          asset={layer}
+          className="sequence-layer"
+        />
+      ))}
+    </div>
+  );
+}
+
+function MediaElement({ asset, className, style }) {
   if (asset.type === "video") {
     return (
       <video
-        key={asset.src}
-        className="sequence-media"
+        className={className}
         style={style}
         src={asset.src}
         data-label={asset.label}
@@ -415,8 +502,7 @@ function SequenceMedia({ asset, style }) {
 
   return (
     <img
-      key={asset.src}
-      className="sequence-media"
+      className={className}
       style={style}
       src={asset.src}
       alt={asset.alt}

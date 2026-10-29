@@ -44,7 +44,7 @@ export default function CursorTrail() {
         const to = points[i];
         if (to.isBreak) continue;
         const life = 1 - (now - to.time) / TRAIL_LIFETIME_MS;
-        context.strokeStyle = `rgba(0, 0, 0, ${life})`;
+        context.strokeStyle = `rgba(255, 255, 255, ${life})`;
         context.beginPath();
         context.moveTo(from.x, from.y);
         context.lineTo(to.x, to.y);

@@ -24,6 +24,9 @@ html,
 body {
   max-width: 100vw;
   overflow-x: hidden;
+  /* Sideways swipes step through the home sequence rather than navigating
+     back/forward. */
+  overscroll-behavior-x: none;
 }
 
 body {
@@ -49,8 +52,9 @@ header {
   z-index: 10;
   pointer-events: none;
   padding-bottom: 0;
-  /* mix-blend-mode: difference; */
-  color: #000;
+  /* White text inverts whatever is behind it, so it reads on any image. */
+  mix-blend-mode: difference;
+  color: #fff;
 }
 
 .header--pinned a {
@@ -80,8 +84,8 @@ header {
   bottom: var(--base);
   transform: translateX(-50%);
   z-index: 10;
-  color: #000;
-  /* mix-blend-mode: difference; */
+  color: #fff;
+  mix-blend-mode: difference;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -92,8 +96,8 @@ header {
   left: 0;
   z-index: 10;
   pointer-events: none;
-  color: #000;
-  /* mix-blend-mode: difference; */
+  color: #fff;
+  mix-blend-mode: difference;
   white-space: nowrap;
   will-change: transform;
   font-size: 0.8em;
@@ -106,7 +110,7 @@ header {
   height: 100vh;
   z-index: 9;
   pointer-events: none;
-  /* mix-blend-mode: difference; */
+  mix-blend-mode: difference;
 }
 
 a {
@@ -155,13 +159,6 @@ h1 {
   background: var(--background);
 }
 
-/* Gives the page something to scroll — the stage above is fixed/pinned and
-   contributes no document height on its own. Scrolling back and forth here
-   keeps advancing the sequence (it loops), so the exact height isn't precise. */
-.sequence-scroll-spacer {
-  height: 1000vh;
-}
-
 .sequence-slot {
   position: absolute;
 }
@@ -171,28 +168,26 @@ h1 {
   z-index: 0;
 }
 
-/* Overlay slots span the full viewport height on their half of the screen,
-   inset by 2rem from the outer edges. The media inside is scaled down to fit
-   (never cropped) so it always stays within the viewport. */
+/* Small assets sit on the layout grid: the screen inside the --base margins
+   is split into 8 rows, and every small asset is the same height, spanning
+   rows 2-7. The width follows each asset's own proportions. */
 .sequence-slot--right,
 .sequence-slot--left {
-  top: 0;
-  bottom: 0;
-  width: 50vw;
-  padding: 3em;
-  box-sizing: border-box;
+  --sequence-margin: var(--base);
+  --sequence-row: calc((100dvh - 2 * var(--base)) / 8);
+  top: calc(var(--base) + var(--sequence-row));
+  height: calc(var(--sequence-row) * 6);
   display: flex;
-  align-items: center;
 }
 
 .sequence-slot--right {
-  right: 0;
+  right: var(--sequence-margin);
   justify-content: flex-end;
   z-index: 2;
 }
 
 .sequence-slot--left {
-  left: 0;
+  left: var(--sequence-margin);
   justify-content: flex-start;
   z-index: 1;
 }
@@ -204,28 +199,117 @@ h1 {
   object-fit: cover;
 }
 
+/* Anything too wide for the screen at the grid height is scaled down to fit
+   rather than cropped. */
 .sequence-slot--right .sequence-media,
 .sequence-slot--left .sequence-media {
   width: auto;
-  height: auto;
-  max-width: 100%;
-  max-height: 100%;
+  height: 100%;
+  max-width: calc(100vw - 2 * var(--sequence-margin));
   object-fit: contain;
 }
 
-/* On narrow screens half the viewport minus 3em of padding leaves almost no
-   room, so overlays get a wider slot (overlapping the centre) and only a
-   slim gutter at the sides. */
+.sequence-slot--right .sequence-media {
+  object-position: right center;
+}
+
+.sequence-slot--left .sequence-media {
+  object-position: left center;
+}
+
+/* A full-screen asset with an animation multiplied over it (the Post Hoc
+   spread). The animation fits the screen height and sticks to the right. */
+.sequence-media--layered {
+  position: relative;
+}
+
+.sequence-layer-base {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.sequence-layer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  height: 100%;
+  width: auto;
+  mix-blend-mode: multiply;
+}
+
+/* On narrow screens most assets would fill the width at the grid height, so
+   they're capped narrower (overlapping the centre) to keep the left/right
+   rhythm, with only a slim gutter at the sides. */
 @media (max-width: 768px) {
   .sequence-slot--right,
   .sequence-slot--left {
-    width: 70vw;
-    padding: 4em 16px;
+    --sequence-margin: 16px;
+  }
+
+  .sequence-slot--right .sequence-media,
+  .sequence-slot--left .sequence-media {
+    max-width: 70vw;
   }
 }
 
 body.loading-active {
   overflow: hidden;
+}
+
+/* Page text blurs in as a page arrives, and blurs out before the next page
+   loads (PageTransitions holds the link click until it has). Only the text is
+   animated, not <main>: a filter there would blur the sequence too and lift
+   the header above the loading splash inside it. */
+@keyframes text-blur-in {
+  from {
+    filter: blur(2px);
+    opacity: 0;
+  }
+  to {
+    filter: blur(0);
+    opacity: 1;
+  }
+}
+
+@keyframes text-blur-out {
+  from {
+    filter: blur(0);
+    opacity: 1;
+  }
+  to {
+    filter: blur(20px);
+    opacity: 0;
+  }
+}
+
+header,
+.information,
+.sequence-counter {
+  animation: text-blur-in 0.6s ease-out both;
+}
+
+/* Kept hidden under the loading splash, so it blurs in as the splash
+   closes. */
+body.loading-active header,
+body.loading-active .sequence-counter {
+  animation: none;
+  opacity: 0;
+}
+
+body.page-leaving header,
+body.page-leaving .information,
+body.page-leaving .sequence-counter {
+  animation: text-blur-out 0.3s ease-in forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  header,
+  .information,
+  .sequence-counter {
+    animation: none;
+  }
 }
 
 .intro-loader {
@@ -276,18 +360,71 @@ body.loading-active {
   text-align: right;
 }
 
-.intro-loader__image {
+/* During the definitions gif the splash starts in the foreground colour and
+   the bar fills it back to the background colour. */
+.intro-loader--definitions {
+  background: var(--foreground);
+}
+
+/* Fills the splash with the background colour, left to right, while the
+   definitions gif plays through. IntroLoader animates it at a randomly
+   changing speed. */
+.intro-loader__bar {
   position: absolute;
-  inset: var(--intro-padding);
-  width: calc(100% - var(--intro-padding) * 2);
-  height: calc(100% - var(--intro-padding) * 2);
+  inset: 0;
+  background: var(--background);
+  transform: scaleX(0);
+  transform-origin: left;
+}
+
+/* Left aligned and vertically centred. Inverted to white on black, then
+   differenced, so its black background drops out and the text shows light on
+   the unfilled foreground and dark where the bar has filled. */
+.intro-loader__definitions {
+  position: absolute;
+  top: 50%;
+  left: var(--intro-padding);
+  transform: translateY(-50%);
+  width: calc(60% - var(--intro-padding) * 2);
+  height: auto;
+  filter: invert(1);
+  mix-blend-mode: difference;
+}
+
+/* Centred, at three quarters of the space inside the padding. */
+.intro-loader__image {
+  --intro-image-scale: 0.75;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: calc((100% - var(--intro-padding) * 2) * var(--intro-image-scale));
+  height: calc((100% - var(--intro-padding) * 2) * var(--intro-image-scale));
   max-width: none;
   object-fit: contain;
   z-index: 1;
 }
 
+/* Held to the middle two of the grid's four columns. */
 .information {
+  max-width: calc((100vw - 2 * var(--base)) / 2);
   margin: 0 auto;
   text-align: center;
-  padding-bottom: 1em;
+  /* Fills the viewport below the header (one line plus its 1em padding), so
+     the copyright can sit at the base on short screens too. */
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100svh - 2 * var(--base) - 2.2em);
+}
+
+.information__copyright {
+  margin-top: auto;
+  padding-top: 6em;
+  font-size: 0.5em;
+}
+
+@media (max-width: 768px) {
+  .information {
+    max-width: none;
+  }
 }
