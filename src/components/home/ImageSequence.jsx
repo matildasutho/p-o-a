@@ -4,6 +4,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 const STEP_DURATION_MS = 500;
 
+// keep in sync with the mobile breakpoint in globals.css
+const MOBILE_QUERY = "(max-width: 768px)";
+
 const SWIPE_THRESHOLD_PX = 40;
 const WHEEL_THRESHOLD = 30;
 const WHEEL_IDLE_MS = 200;
@@ -14,10 +17,6 @@ const OVERLAY_OFFSET_RATIO = 0.08;
 const NO_OFFSET = { x: 0, y: 0 };
 
 const LABEL_CURSOR_GAP = 16;
-const LABEL_SPRING_STIFFNESS = 1;
-const LABEL_SPRING_DAMPING = 0.1;
-
-const BLANK = { background: null, overlay: null, side: null, current: null };
 
 function buildStates(total) {
   const states = [{ background: 0, overlay: null, side: null, current: 0 }];
@@ -43,12 +42,13 @@ export default function ImageSequence({ assets }) {
   const total = assets.length;
   const states = useMemo(() => buildStates(total), [total]);
 
-  const [index, setIndex] = useState(-1);
+  const [index, setIndex] = useState(0);
   const [transition, setTransition] = useState(null);
   const [offsets, setOffsets] = useState({});
 
   const [hoverLabel, setHoverLabel] = useState(null);
-  const [pointerInside, setPointerInside] = useState(false);
+  // last label shown, so the text stays put while the label blurs out
+  const [labelText, setLabelText] = useState(null);
   const labelRef = useRef(null);
   const pointerRef = useRef(null);
 
@@ -65,75 +65,25 @@ export default function ImageSequence({ assets }) {
           el.classList.contains("sequence-media") &&
           parseFloat(el.style.opacity || "1") >= 0.5,
       );
-    setHoverLabel(media?.dataset.label || null);
+    const label = media?.dataset.label || null;
+    setHoverLabel(label);
+    if (label) setLabelText(label);
   }, []);
 
   useEffect(() => {
-    const reduceMotion = window.matchMedia(
-      "(prefers-reduced-motion: reduce)",
-    ).matches;
-    const spring = { x: 0, y: 0, vx: 0, vy: 0 };
-    let frame = null;
-    let lastTime = 0;
-
-    function placeLabel() {
-      if (!labelRef.current) return;
-      labelRef.current.style.transform = `translate(${
-        spring.x + LABEL_CURSOR_GAP
-      }px, ${spring.y + LABEL_CURSOR_GAP}px)`;
-    }
-
-    function tick(now) {
-      const pointer = pointerRef.current;
-      if (!pointer) {
-        frame = null;
-        return;
-      }
-      const steps = Math.min((now - lastTime) / (1000 / 60), 4);
-      lastTime = now;
-      for (const [axis, velocity] of [
-        ["x", "vx"],
-        ["y", "vy"],
-      ]) {
-        spring[velocity] +=
-          (pointer[axis] - spring[axis]) * LABEL_SPRING_STIFFNESS * steps;
-        spring[velocity] *= LABEL_SPRING_DAMPING ** steps;
-        spring[axis] += spring[velocity] * steps;
-      }
-      placeLabel();
-
-      const settled =
-        Math.abs(pointer.x - spring.x) < 0.1 &&
-        Math.abs(pointer.y - spring.y) < 0.1 &&
-        Math.abs(spring.vx) < 0.1 &&
-        Math.abs(spring.vy) < 0.1;
-      frame = settled ? null : requestAnimationFrame(tick);
-    }
-
     function handlePointerMove(event) {
       if (event.pointerType !== "mouse") return;
-      const isEntering = pointerRef.current === null;
       pointerRef.current = { x: event.clientX, y: event.clientY };
-      if (isEntering) setPointerInside(true);
-      if (isEntering || reduceMotion) {
-        Object.assign(spring, {
-          x: event.clientX,
-          y: event.clientY,
-          vx: 0,
-          vy: 0,
-        });
-        placeLabel();
-      }
-      if (!reduceMotion && frame === null) {
-        lastTime = performance.now();
-        frame = requestAnimationFrame(tick);
+      if (labelRef.current) {
+        labelRef.current.style.transform = `translate(${
+          event.clientX + LABEL_CURSOR_GAP
+        }px, ${event.clientY + LABEL_CURSOR_GAP}px)`;
       }
       updateHoverLabel();
     }
 
     function handlePointerLeave() {
       pointerRef.current = null;
-      setPointerInside(false);
       setHoverLabel(null);
     }
 
@@ -143,7 +93,6 @@ export default function ImageSequence({ assets }) {
       handlePointerLeave,
     );
     return () => {
-      cancelAnimationFrame(frame);
       window.removeEventListener("pointermove", handlePointerMove);
       document.documentElement.removeEventListener(
         "pointerleave",
@@ -161,7 +110,7 @@ export default function ImageSequence({ assets }) {
 
     let frame = null;
     let startTime = 0;
-    let from = -1;
+    let from = 0;
     let to = null;
 
     function finishStep() {
@@ -185,10 +134,8 @@ export default function ImageSequence({ assets }) {
 
     function step(direction, point) {
       if (frame !== null) finishStep();
-      if (from < 0 && direction < 0) return;
-      const next =
-        from < 0 ? 0 : (from + direction + states.length) % states.length;
-      const current = from < 0 ? BLANK : states[from];
+      const next = (from + direction + states.length) % states.length;
+      const current = states[from];
       const target = states[next];
 
       if (target.overlay != null && target.overlay !== current.overlay) {
@@ -281,12 +228,11 @@ export default function ImageSequence({ assets }) {
     return <div className="sequence-stage" />;
   }
 
-  const fromState = index < 0 ? BLANK : states[index];
+  const fromState = states[index];
   const toState = transition ? states[transition.to] : null;
   const progress = transition?.progress ?? 0;
 
-  const currentAssetNumber = fromState.current == null ? 0 : fromState.current + 1;
-  const counterLabel = `${String(currentAssetNumber).padStart(2, "0")} / ${String(
+  const counterLabel = `${String(fromState.current + 1).padStart(2, "0")} / ${String(
     total,
   ).padStart(2, "0")}`;
 
@@ -315,10 +261,7 @@ export default function ImageSequence({ assets }) {
         overlayOpacity = fadeIn;
       }
     } else if (bgChanges) {
-      if (background == null) {
-        background = toState.background;
-        bgOpacity = progress;
-      } else if (firstHalf) {
+      if (firstHalf) {
         bgOpacity = fadeOut;
       } else {
         background = toState.background;
@@ -341,33 +284,29 @@ export default function ImageSequence({ assets }) {
     }
   }
 
-  const bgAsset = background == null ? null : assets[background];
+  const bgAsset = assets[background];
   const overlayAsset = overlay == null ? null : assets[overlay];
   const overlayOffset = offsets[overlay] ?? NO_OFFSET;
-
-  const hasStarted = index >= 0 || transition != null;
-  const tooltip = !hasStarted && pointerInside ? "click to start" : null;
 
   return (
     <>
       <div className="sequence-counter">{counterLabel}</div>
-      {/* <div
+      <div
         ref={labelRef}
-        className="sequence-hover-label"
-        style={{ opacity: tooltip ? 1 : 0 }}
+        className={`sequence-hover-label${
+          hoverLabel ? " sequence-hover-label--visible" : ""
+        }`}
         aria-hidden="true"
       >
-        {tooltip}
-      </div> */}
+        {labelText}
+      </div>
       <div className="sequence-stage">
         <div className="sequence-slot sequence-slot--background">
-          {bgAsset && (
-            <SequenceMedia
-              key={bgAsset.src}
-              asset={bgAsset}
-              style={{ opacity: bgOpacity }}
-            />
-          )}
+          <SequenceMedia
+            key={bgAsset.src}
+            asset={bgAsset}
+            style={{ opacity: bgOpacity }}
+          />
         </div>
         {overlayAsset && (
           <div
@@ -439,7 +378,7 @@ function MediaElement({ asset, className, style }) {
     );
   }
 
-  return (
+  const image = (
     <img
       className={className}
       style={style}
@@ -447,5 +386,14 @@ function MediaElement({ asset, className, style }) {
       alt={asset.alt}
       data-label={asset.label}
     />
+  );
+
+  if (!asset.mobileSrc) return image;
+
+  return (
+    <picture className="sequence-picture">
+      <source media={MOBILE_QUERY} srcSet={asset.mobileSrc} />
+      {image}
+    </picture>
   );
 }

@@ -1,11 +1,8 @@
-import { cookies } from "next/headers";
 import HomeExperience from "@/components/home/HomeExperience";
-import { INTRO_SEEN_COOKIE } from "@/lib/intro";
 import { getSequenceAssets } from "@/lib/sequence";
 
-export default async function Home() {
+export default function Home() {
   const assets = getSequenceAssets();
-  const introSeen = (await cookies()).get(INTRO_SEEN_COOKIE)?.value === "1";
 
-  return <HomeExperience assets={assets} introSeen={introSeen} />;
+  return <HomeExperience assets={assets} />;
 }
