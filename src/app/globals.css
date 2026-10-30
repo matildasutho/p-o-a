@@ -14,6 +14,13 @@
   --background: #e1e1e1;
   --foreground: #000000;
   --base: 40px;
+  --font-size: 24px;
+}
+@media (max-width: 768px) {
+  :root {
+    --base: 32px;
+    --font-size: 18px;
+  }
 }
 * {
   box-sizing: border-box;
@@ -42,6 +49,7 @@ body::-webkit-scrollbar {
 }
 header {
   padding-bottom: 1em;
+  text-wrap: pretty;
 }
 
 .header--pinned {
@@ -382,6 +390,7 @@ body.page-leaving .sequence-counter {
   display: flex;
   flex-direction: column;
   min-height: calc(100svh - 2 * var(--base) - 2.2em);
+  text-wrap: pretty;
 }
 
 .information__copyright {

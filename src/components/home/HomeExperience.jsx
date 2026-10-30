@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import CursorTrail from "./CursorTrail";
+
 import ImageSequence from "./ImageSequence";
 import IntroLoader from "./IntroLoader";
 import { INTRO_SEEN_COOKIE } from "@/lib/intro";
@@ -95,9 +95,10 @@ export default function HomeExperience({ assets, introSeen = false }) {
 
   return (
     <>
-      {showIntro && <IntroLoader ready={assetsReady} onDone={handleIntroDone} />}
+      {showIntro && (
+        <IntroLoader ready={assetsReady} onDone={handleIntroDone} />
+      )}
       <ImageSequence assets={assets} />
-      {!showIntro && <CursorTrail />}
     </>
   );
 }
